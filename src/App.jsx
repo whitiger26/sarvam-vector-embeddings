@@ -408,18 +408,25 @@ function loadPdfJs() {
   });
 }
 
-async function parsePdfToChunks(file, brand = "Uploaded Manual") {
+async function parsePdfToChunks(file, brand = "Uploaded Manual", onProgress) {
   const pdfjsLib = await loadPdfJs();
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const totalPages = pdf.numPages;
   const chunks = [];
   let buffer = "";
   let bufferStartPage = 1;
   let currentSection = "Page";
-  for (let p = 1; p <= pdf.numPages; p++) {
+  if (onProgress) onProgress({ stage: "parsing", page: 0, total: totalPages });
+  for (let p = 1; p <= totalPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
     const pageText = content.items.map(it => it.str).join(" ").replace(/\s+/g, " ").trim();
+    // Report progress every 5 pages or on the last page — frequent enough
+    // to feel responsive, sparse enough to avoid render thrash on big PDFs.
+    if (onProgress && (p % 5 === 0 || p === totalPages)) {
+      onProgress({ stage: "parsing", page: p, total: totalPages });
+    }
     if (!pageText) continue;
     const sectionMatch = pageText.match(/(Section\s+\d+(?:\.\d+)?[^.]*\.)/i);
     if (sectionMatch) currentSection = sectionMatch[1].slice(0, 80);
@@ -2571,7 +2578,22 @@ export default function App() {
       else if (lower.includes("yamaha")) brand = "Yamaha (uploaded)";
       else if (lower.includes("honda")) brand = "Honda (uploaded)";
 
-      const newChunks = await parsePdfToChunks(file, brand);
+      // Surface PDF parse progress (page X of Y) in the same header indicator
+      // we use for embedding progress, so the user always knows the app is
+      // doing something rather than frozen. Large PDFs can spend 30-90s in
+      // parse before reaching the embedding stage.
+      const newChunks = await parsePdfToChunks(file, brand, (p) => {
+        if (p.stage === "parsing" && p.total > 0) {
+          const pct = p.page / p.total;
+          setIndexingProgress({
+            pct,
+            label: `Parsing PDF — page ${p.page}/${p.total}…`,
+          });
+        }
+      });
+      // Clear the parse-stage indicator; the embedding useEffect will pick up
+      // from here and set its own indexing progress.
+      setIndexingProgress(null);
       if (newChunks.length === 0) {
         setUploadError("No extractable text found in this PDF (scanned image PDFs need OCR).");
       } else {
@@ -2580,6 +2602,7 @@ export default function App() {
     } catch (e) {
       console.error(e);
       setUploadError(e.message || "Failed to parse PDF");
+      setIndexingProgress(null);
     } finally {
       setIsUploading(false);
     }
