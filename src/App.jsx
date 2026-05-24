@@ -259,8 +259,10 @@ async function getEmbedder() {
     _embedderPromise = (async () => {
       notifyEmbeddingProgress("Loading embedding model…", 0);
       // Dynamic import from CDN — works in both artifact preview and deployed.
+      // The /* @vite-ignore */ comment tells Vite/Rollup not to try to resolve
+      // or bundle this HTTPS URL at build time; it's a true runtime fetch.
       // We pin a specific minor version to keep behavior stable.
-      const mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3");
+      const mod = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3");
       const { pipeline, env } = mod;
       // Tell transformers.js where to fetch models from (HF CDN by default)
       env.allowLocalModels = false;
@@ -2556,9 +2558,9 @@ export default function App() {
     setIsUploading(true);
     setUploadError("");
     try {
-      const MAX_PDF_SIZE = 15 * 1024 * 1024; // 15 MB
+      const MAX_PDF_SIZE = 50 * 1024 * 1024; // 50 MB
       if (file.size > MAX_PDF_SIZE) {
-        setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 15 MB.`);
+        setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 50 MB.`);
         return;
       }
       const lower = file.name.toLowerCase();
